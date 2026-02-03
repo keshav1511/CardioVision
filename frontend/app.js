@@ -1,4 +1,4 @@
-const API = "http://127.0.0.1:8000";
+const API = "https://cardiovision-agmq.onrender.com";
 
 // Helper function to show loading state
 function setLoading(isLoading, buttonId) {

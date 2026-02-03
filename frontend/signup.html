@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CardioVision | Signup</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="card">
+  <div class="app-title">CardioVision</div>
+  <div class="app-subtitle">Create your account</div>
+
+  <input id="username" type="text" placeholder="Username" required>
+  <input id="email" type="email" placeholder="Email" required>
+  <input id="password" type="password" placeholder="Password (min 8 characters)" required>
+
+  <!-- ID for loading state -->
+  <button id="signupBtn" onclick="signupUser()">Sign Up</button>
+  <button class="secondary-btn" onclick="window.location.href='login.html'">
+    Back to Login
+  </button>
+
+  <p id="msg"></p>
+</div>
+
+<script src="app.js"></script>
+
+<script>
+  // Display message if redirected from login
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("msg") === "no_account") {
+    document.getElementById("msg").innerText =
+      "No account found. Please create a new account.";
+    document.getElementById("msg").style.color = "#0a6ebd";
+  }
+</script>
+
+</body>
+</html>

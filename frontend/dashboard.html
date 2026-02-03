@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CardioVision | Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="card">
+  <!--Header -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+    <div class="app-title" style="margin: 0;">CardioVision</div>
+    <button onclick="logout()" style="width: auto; padding: 8px 16px; font-size: 12px; margin: 0;">
+      Logout
+    </button>
+  </div>
+  
+  <div class="app-subtitle">Upload retinal image for heart analysis</div>
+
+  <input type="file" id="imageFile" accept="image/jpeg,image/jpg,image/png,image/bmp">
+  <button id="predictBtn" type="button">Analyze Image</button>
+
+  <!-- Result Display -->
+  <div id="resultSection" style="margin-top:20px;">
+    <h3 id="riskText"></h3>
+
+    <img
+      id="heatmap"
+      alt="Heatmap Result"
+      style="
+        display:none;
+        width: 300px;
+        height: 300px;
+        margin: 15px auto;
+        border-radius: 12px;
+        border: 3px solid #ddd;
+        object-fit: contain;
+      "
+    />
+  </div>
+
+  <button id="downloadBtn" style="margin-top:20px;">
+    Download Medical Report
+  </button>
+
+  <!-- Instructions -->
+  <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: left;">
+    <strong>Instructions:</strong>
+    <ul style="margin: 10px 0; padding-left: 20px; font-size: 13px;">
+      <li>Select a clear retinal fundus image</li>
+      <li>Supported formats: JPG, PNG, BMP</li>
+      <li>Maximum file size: 10MB</li>
+      <li>Click "Analyze Image" to start</li>
+    </ul>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

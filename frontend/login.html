@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CardioVision | Login</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="card">
+  <div class="app-title">CardioVision</div>
+  <div class="app-subtitle">AI-based Heart Risk Detection</div>
+
+  <input id="email" type="email" placeholder="Email" required>
+  <input id="password" type="password" placeholder="Password" required>
+
+  <!-- ✅ FIXED: Added ID for loading state -->
+  <button id="loginBtn" onclick="login()">Login</button>
+  <button class="secondary-btn" onclick="goToSignup()">Create Account</button>
+
+  <p id="msg"></p>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,28 +1,14 @@
-# FastAPI and server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-
-# Deep Learning
+pydantic==2.4.2
+pymongo==4.6.0
+python-dotenv==1.0.0
+passlib[bcrypt]==1.7.4
+python-jose==3.3.0
+Pillow==10.1.0
+opencv-python-headless==4.8.1.78
 torch==2.0.1
 torchvision==0.15.2
 efficientnet-pytorch==0.7.1
-
-# Image Processing
-opencv-python==4.8.1.78
-Pillow==10.1.0
-numpy==1.24.3
-
-# Database
-pymongo==4.6.0
-
-# Authentication & Security
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-dotenv==1.0.0
-
-# PDF Generation
-reportlab==4.0.7
-
-# CORS
-python-cors==1.0.0
+reportlab==4.0.8

@@ -1,4 +1,4 @@
-const API = "https://cardiovision-agmq.onrender.com";
+const API = "https://cardiovision-ba4w.onrender.com";
 
 // Helper function to show loading state
 function setLoading(isLoading, buttonId) {

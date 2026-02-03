@@ -81,22 +81,26 @@ Open your browser and navigate to:
 ## Project Structure
 
 ```
-cardiovision/
-├── app.py                 # Main FastAPI application
-├── auth.py               # Authentication logic
-├── databases.py          # Database connection
-├── models.py             # Pydantic models
-├── requirements.txt      # Python dependencies
-├── .env.example         # Environment variables template
-├── .gitignore           # Git ignore file
-├── cardiovision_b7.pth  # Trained model (not included)
-├── login.html           # Login page
-├── signup.html          # Signup page
-├── dashboard.html       # Main dashboard
-├── app.js              # Frontend JavaScript
-├── style.css           # Styling
-├── heatmaps/           # Generated heatmaps (auto-created)
-└── reports/            # Generated reports (auto-created)
+CardioVision/
+├── backend/
+│ ├── app.py                        # FastAPI application
+│ ├── auth.py                       # JWT authentication logic
+│ ├── database.py                   # MongoDB connection
+│ ├── models.py                     # Pydantic models
+│ ├── cardiovision_b7.pth           # Trained model (NOT committed)
+│ └── heatmaps/                     # Generated Grad-CAM images
+│
+├── frontend/
+│ ├── login.html                    # Login page
+│ ├── signup.html                   # Signup page
+│ ├── dashboard.html                #Main Dashboard
+│ ├── app.js                        #Frontend JavaScript
+│ └── style.css                     #Styling
+│
+├── .env
+├── .gitignore
+├── requirements.txt
+└── README.md
 ```
 
 ## API Endpoints

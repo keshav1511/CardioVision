@@ -37,7 +37,11 @@ app = FastAPI(title="CardioVision API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://cardio-vision-nine.vercel.app",  # Your Vercel frontend
+        "http://localhost:3000",  # For local development
+        "http://localhost:5173",  # If using Vite
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

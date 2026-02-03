@@ -14,3 +14,4 @@ torchvision==0.15.2
 efficientnet-pytorch==0.7.1
 reportlab==4.0.8
 email-validator
+pytz==2023.3

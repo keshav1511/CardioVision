@@ -32,66 +32,85 @@ def get_ist_time():
     return datetime.now(IST)
 
 # ----------------------------------
-# Model Download from Google Drive
+# Model Download from GitHub Release
 # ----------------------------------
 MODEL_PATH = "cardiovision_b7.pth"
-GDRIVE_FILE_ID = os.getenv("GDRIVE_MODEL_ID", "")
+MODEL_URL = "https://github.com/keshav1511/CardioVision/releases/download/v1.0/cardiovision_b7.pth"
 
-def download_model_from_gdrive():
-    """Download model from Google Drive if not present"""
+def download_model_from_github():
+    """Download model from GitHub Release if not present"""
     if os.path.exists(MODEL_PATH):
         file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
         print(f"✅ Model file '{MODEL_PATH}' already exists ({file_size:.2f} MB)")
         return True
     
-    if not GDRIVE_FILE_ID:
-        print("❌ GDRIVE_MODEL_ID environment variable not set!")
-        print("⚠️ Continuing without model - prediction endpoint will return 503")
-        return False
-    
     try:
-        print(f"📥 Downloading model from Google Drive (ID: {GDRIVE_FILE_ID})...")
+        print(f"📥 Downloading model from GitHub Release...")
+        print(f"🔗 URL: {MODEL_URL}")
         
-        # Google Drive direct download URL
-        download_url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
+        response = requests.get(MODEL_URL, stream=True, allow_redirects=True)
         
-        # Try to get the file
-        session = requests.Session()
-        response = session.get(download_url, stream=True)
+        if response.status_code != 200:
+            print(f"❌ Download failed with status code: {response.status_code}")
+            print(f"⚠️ Make sure the GitHub release is published and file is uploaded")
+            return False
         
-        # Handle Google Drive virus scan warning
-        if "download_warning" in response.text or "confirm=" in response.text:
-            print("⚠️ Large file detected, getting confirmation token...")
-            for key, value in response.cookies.items():
-                if key.startswith('download_warning'):
-                    download_url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}&confirm={value}"
-                    response = session.get(download_url, stream=True)
-                    break
+        # Get file size
+        total_size = int(response.headers.get('content-length', 0))
         
-        # Download the file
-        if response.status_code == 200:
-            total_size = int(response.headers.get('content-length', 0))
-            
-            with open(MODEL_PATH, 'wb') as f:
-                downloaded = 0
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
+        if total_size == 0:
+            print("⚠️ Warning: Content-Length is 0")
+        else:
+            print(f"📦 File size: {total_size / (1024*1024):.2f} MB")
+        
+        # Download with progress
+        print("💾 Downloading to disk...")
+        downloaded = 0
+        chunk_count = 0
+        
+        with open(MODEL_PATH, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    chunk_count += 1
+                    
+                    # Print progress every 1000 chunks (~8MB)
+                    if chunk_count % 1000 == 0:
                         if total_size > 0:
                             progress = (downloaded / total_size) * 100
-                            print(f"📥 Progress: {progress:.1f}%", end='\r')
-            
-            if os.path.exists(MODEL_PATH):
-                file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
-                print(f"\n✅ Model downloaded successfully ({file_size:.2f} MB)")
-                return True
-            else:
-                print("\n❌ Model download failed - file not created")
-                return False
-        else:
-            print(f"❌ Download failed with status code: {response.status_code}")
+                            print(f"📥 Progress: {progress:.1f}% ({downloaded/(1024*1024):.1f} MB)", end='\r')
+                        else:
+                            print(f"📥 Downloaded: {downloaded/(1024*1024):.1f} MB", end='\r')
+        
+        print()  # New line after progress
+        
+        # Verify file was created
+        if not os.path.exists(MODEL_PATH):
+            print("❌ Model file was not created!")
             return False
+        
+        file_size = os.path.getsize(MODEL_PATH)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        print(f"✅ Model downloaded successfully ({file_size_mb:.2f} MB)")
+        
+        # Verify it's a valid PyTorch file
+        print("🔍 Verifying file integrity...")
+        try:
+            with open(MODEL_PATH, 'rb') as f:
+                header = f.read(100)
+                # PyTorch files start with PK (ZIP format)
+                if b'PK' in header[:4]:
+                    print("✅ File appears to be a valid PyTorch model")
+                    return True
+                else:
+                    print(f"⚠️ File header: {header[:20]}")
+                    print("⚠️ File might not be a valid PyTorch model")
+                    return False
+        except Exception as e:
+            print(f"⚠️ Could not verify file: {e}")
+            return True  # Proceed anyway
             
     except Exception as e:
         print(f"❌ Error downloading model: {e}")
@@ -163,26 +182,46 @@ def login(user: UserLogin):
 # Model Loading
 # ----------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"🖥️ Using device: {device}")
 
-# Download model from Google Drive if needed
-model_downloaded = download_model_from_gdrive()
+# Download model from GitHub Release if needed
+model_downloaded = download_model_from_github()
 
 # Load the model
 model = None
 if os.path.exists(MODEL_PATH):
     try:
-        print("🔄 Loading model...")
+        print("🔄 Loading model into memory...")
         model = EfficientNet.from_name("efficientnet-b7")
         model._fc = torch.nn.Linear(model._fc.in_features, 1)
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+        
+        print("📥 Loading model weights...")
+        state_dict = torch.load(MODEL_PATH, map_location=device)
+        model.load_state_dict(state_dict)
+        
         model.to(device)
         model.eval()
-        print("✅ Model loaded successfully")
+        print("✅ Model loaded successfully and ready for inference!")
+        
     except Exception as e:
         print(f"❌ Error loading model: {e}")
         import traceback
         traceback.print_exc()
         model = None
+        
+        # Additional diagnostics
+        print("\n🔍 Diagnostics:")
+        print(f"   - File exists: {os.path.exists(MODEL_PATH)}")
+        if os.path.exists(MODEL_PATH):
+            print(f"   - File size: {os.path.getsize(MODEL_PATH) / (1024*1024):.2f} MB")
+            
+            # Check file header
+            try:
+                with open(MODEL_PATH, 'rb') as f:
+                    header = f.read(100)
+                    print(f"   - File header (first 50 bytes): {header[:50]}")
+            except:
+                pass
 else:
     print(f"⚠️ Warning: Model file '{MODEL_PATH}' not found!")
     print("⚠️ Prediction endpoint will return 503 until model is available")
@@ -245,7 +284,7 @@ async def predict(
     if model is None:
         raise HTTPException(
             status_code=503, 
-            detail="Model is not loaded. Please contact administrator. Check GDRIVE_MODEL_ID environment variable."
+            detail="Model is not loaded. Please check server logs or contact administrator."
         )
     
     try:
@@ -414,7 +453,8 @@ def root():
         "server_time": current_time.strftime('%d %B %Y, %I:%M:%S %p IST'),  
         "timezone": "Asia/Kolkata (IST)",
         "model_loaded": model is not None,
-        "model_status": "ready" if model is not None else "not loaded - check GDRIVE_MODEL_ID",
+        "model_status": "ready" if model is not None else "not loaded - check GitHub release",
+        "model_source": "GitHub Release (v1.0)",
         "endpoints": {
             "signup": "/signup",
             "login": "/login",

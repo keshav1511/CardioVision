@@ -19,6 +19,8 @@ from reportlab.pdfgen import canvas
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import requests
+import gdown
 
 # Load environment variables
 load_dotenv()
@@ -31,18 +33,48 @@ def get_ist_time():
     return datetime.now(IST)
 
 # ----------------------------------
+# Model Download from Google Drive
+# ----------------------------------
+MODEL_PATH = "cardiovision_b7.pth"
+GDRIVE_FILE_ID = os.getenv("GDRIVE_MODEL_ID", "")  # You'll add this as environment variable
+
+def download_model_from_gdrive():
+    """Download model from Google Drive if not present"""
+    if os.path.exists(MODEL_PATH):
+        print(f"✅ Model file '{MODEL_PATH}' already exists")
+        return True
+    
+    if not GDRIVE_FILE_ID:
+        print("❌ GDRIVE_MODEL_ID environment variable not set!")
+        return False
+    
+    try:
+        print(f"📥 Downloading model from Google Drive (ID: {GDRIVE_FILE_ID})...")
+        url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
+        
+        # Use gdown for better Google Drive handling
+        gdown.download(url, MODEL_PATH, quiet=False)
+        
+        if os.path.exists(MODEL_PATH):
+            file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)  # MB
+            print(f"✅ Model downloaded successfully ({file_size:.2f} MB)")
+            return True
+        else:
+            print("❌ Model download failed - file not created")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error downloading model: {e}")
+        return False
+
+# ----------------------------------
 # App
 # ----------------------------------
 app = FastAPI(title="CardioVision API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://cardio-vision-nine.vercel.app",
-        "https://cardio-vision-opv3u9519-keshav-nayaks-projects.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ],
+    allow_origins=["*"],  # Updated to allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -95,21 +127,29 @@ def login(user: UserLogin):
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-# Model
+# ----------------------------------
+# Model Loading
+# ----------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Check if model file exists
-model_path = "cardiovision_b7.pth"
-if not os.path.exists(model_path):
-    print(f"⚠️ Warning: Model file '{model_path}' not found!")
-    model = None
+# Download model from Google Drive if needed
+model_downloaded = download_model_from_gdrive()
+
+# Load the model
+if os.path.exists(MODEL_PATH):
+    try:
+        model = EfficientNet.from_name("efficientnet-b7")
+        model._fc = torch.nn.Linear(model._fc.in_features, 1)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+        model.to(device)
+        model.eval()
+        print("✅ Model loaded successfully")
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        model = None
 else:
-    model = EfficientNet.from_name("efficientnet-b7")
-    model._fc = torch.nn.Linear(model._fc.in_features, 1)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    print("✅ Model loaded successfully")
+    print(f"⚠️ Warning: Model file '{MODEL_PATH}' not found!")
+    model = None
 
 class GradCAM:
     def __init__(self, model):
@@ -167,7 +207,10 @@ async def predict(
     user_id: str = Depends(get_current_user)
 ):
     if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded. Please contact administrator.")
+        raise HTTPException(
+            status_code=503, 
+            detail="Model not loaded. Please contact administrator or check server logs."
+        )
     
     try:
         # Validate file size
@@ -336,6 +379,7 @@ def root():
         "version": "1.0.0",
         "server_time": current_time.strftime('%d %B %Y, %I:%M:%S %p IST'),  
         "timezone": "Asia/Kolkata (IST)",
+        "model_loaded": model is not None,
         "endpoints": {
             "signup": "/signup",
             "login": "/login",

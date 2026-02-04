@@ -31,7 +31,9 @@ function showMessage(elementId, message, isError = true) {
 // Check if user is authenticated
 function checkAuth() {
   const token = localStorage.getItem("token");
-  if (!token && !window.location.pathname.includes("login") && !window.location.pathname.includes("signup")) {
+  const currentPage = window.location.pathname;
+  
+  if (!token && !currentPage.includes("login") && !currentPage.includes("signup") && !currentPage.includes("index")) {
     window.location.href = "login.html";
   }
 }
@@ -82,7 +84,7 @@ function login() {
   })
   .catch(err => {
     console.error("Login error:", err);
-    showMessage("msg", "Connection error. Please check your internet.");
+    showMessage("msg", "Cannot connect to server. Please check if the backend is running.");
   })
   .finally(() => {
     setLoading(false, "loginBtn");
@@ -127,7 +129,7 @@ function signupUser() {
   })
   .catch(err => {
     console.error("Signup error:", err);
-    showMessage("msg", "Connection error. Please try again.");
+    showMessage("msg", "Cannot connect to server. Please try again.");
   })
   .finally(() => {
     setLoading(false, "signupBtn");
@@ -208,16 +210,16 @@ function predict() {
     console.log("📊 Prediction Response:", data);
     console.log("🔗 Heatmap URL:", data.heatmap_url);
 
-    //Image loading with debugging
+    // Image loading with debugging
     img.onerror = function(e) {
       console.error("❌ Image failed to load");
       console.error("Failed URL:", data.heatmap_url);
       console.error("Error:", e);
       
-      riskText.innerHTML = "⚠️ Result generated but image failed to load.<br>Make sure you're accessing via http://127.0.0.1:3000";
-      riskText.style.color = "red";
-      
-      alert("Image load failed!\n\nMake sure you're serving the frontend properly:\n1. Open new terminal\n2. cd to frontend folder\n3. Run: python -m http.server 3000\n4. Access: http://127.0.0.1:3000/login.html");
+      riskText.innerHTML = `⚠️ Analysis complete but image failed to load.<br>
+        Risk: ${data.risk}<br>
+        Confidence: ${data.confidence}%`;
+      riskText.style.color = data.risk === "High Risk" ? "red" : data.risk === "Moderate Risk" ? "orange" : "green";
     };
 
     img.onload = function() {

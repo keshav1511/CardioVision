@@ -2,26 +2,42 @@
   "version": 2,
   "builds": [
     {
-      "src": "*.html",
+      "src": "**/*.html",
       "use": "@vercel/static"
     },
     {
-      "src": "*.css",
+      "src": "**/*.css",
       "use": "@vercel/static"
     },
     {
-      "src": "*.js",
+      "src": "**/*.js",
       "use": "@vercel/static"
     }
   ],
   "routes": [
     {
-      "src": "/",
+      "src": "/login.html",
       "dest": "/login.html"
     },
     {
-      "src": "/(.*)",
-      "dest": "/$1"
+      "src": "/signup.html",
+      "dest": "/signup.html"
+    },
+    {
+      "src": "/dashboard.html",
+      "dest": "/dashboard.html"
+    },
+    {
+      "src": "/style.css",
+      "dest": "/style.css"
+    },
+    {
+      "src": "/app.js",
+      "dest": "/app.js"
+    },
+    {
+      "src": "/",
+      "dest": "/login.html"
     }
   ]
 }

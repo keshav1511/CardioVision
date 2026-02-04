@@ -20,7 +20,6 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import requests
-import gdown
 
 # Load environment variables
 load_dotenv()
@@ -36,45 +35,78 @@ def get_ist_time():
 # Model Download from Google Drive
 # ----------------------------------
 MODEL_PATH = "cardiovision_b7.pth"
-GDRIVE_FILE_ID = os.getenv("GDRIVE_MODEL_ID", "")  # You'll add this as environment variable
+GDRIVE_FILE_ID = os.getenv("GDRIVE_MODEL_ID", "")
 
 def download_model_from_gdrive():
     """Download model from Google Drive if not present"""
     if os.path.exists(MODEL_PATH):
-        print(f"✅ Model file '{MODEL_PATH}' already exists")
+        file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+        print(f"✅ Model file '{MODEL_PATH}' already exists ({file_size:.2f} MB)")
         return True
     
     if not GDRIVE_FILE_ID:
         print("❌ GDRIVE_MODEL_ID environment variable not set!")
+        print("⚠️ Continuing without model - prediction endpoint will return 503")
         return False
     
     try:
         print(f"📥 Downloading model from Google Drive (ID: {GDRIVE_FILE_ID})...")
-        url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
         
-        # Use gdown for better Google Drive handling
-        gdown.download(url, MODEL_PATH, quiet=False)
+        # Google Drive direct download URL
+        download_url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}"
         
-        if os.path.exists(MODEL_PATH):
-            file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)  # MB
-            print(f"✅ Model downloaded successfully ({file_size:.2f} MB)")
-            return True
+        # Try to get the file
+        session = requests.Session()
+        response = session.get(download_url, stream=True)
+        
+        # Handle Google Drive virus scan warning
+        if "download_warning" in response.text or "confirm=" in response.text:
+            print("⚠️ Large file detected, getting confirmation token...")
+            for key, value in response.cookies.items():
+                if key.startswith('download_warning'):
+                    download_url = f"https://drive.google.com/uc?export=download&id={GDRIVE_FILE_ID}&confirm={value}"
+                    response = session.get(download_url, stream=True)
+                    break
+        
+        # Download the file
+        if response.status_code == 200:
+            total_size = int(response.headers.get('content-length', 0))
+            
+            with open(MODEL_PATH, 'wb') as f:
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            print(f"📥 Progress: {progress:.1f}%", end='\r')
+            
+            if os.path.exists(MODEL_PATH):
+                file_size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+                print(f"\n✅ Model downloaded successfully ({file_size:.2f} MB)")
+                return True
+            else:
+                print("\n❌ Model download failed - file not created")
+                return False
         else:
-            print("❌ Model download failed - file not created")
+            print(f"❌ Download failed with status code: {response.status_code}")
             return False
             
     except Exception as e:
         print(f"❌ Error downloading model: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # ----------------------------------
-# App
+# App Setup
 # ----------------------------------
 app = FastAPI(title="CardioVision API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Updated to allow all origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -104,7 +136,7 @@ def signup(user: UserCreate):
         "username": user.username,
         "email": user.email,
         "password": hash_password(user.password),
-        "created_at": get_ist_time()  # ✅ FIXED: IST time
+        "created_at": get_ist_time()
     })
 
     return {"message": "Account created successfully"}
@@ -136,8 +168,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model_downloaded = download_model_from_gdrive()
 
 # Load the model
+model = None
 if os.path.exists(MODEL_PATH):
     try:
+        print("🔄 Loading model...")
         model = EfficientNet.from_name("efficientnet-b7")
         model._fc = torch.nn.Linear(model._fc.in_features, 1)
         model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
@@ -146,10 +180,12 @@ if os.path.exists(MODEL_PATH):
         print("✅ Model loaded successfully")
     except Exception as e:
         print(f"❌ Error loading model: {e}")
+        import traceback
+        traceback.print_exc()
         model = None
 else:
     print(f"⚠️ Warning: Model file '{MODEL_PATH}' not found!")
-    model = None
+    print("⚠️ Prediction endpoint will return 503 until model is available")
 
 class GradCAM:
     def __init__(self, model):
@@ -209,7 +245,7 @@ async def predict(
     if model is None:
         raise HTTPException(
             status_code=503, 
-            detail="Model not loaded. Please contact administrator or check server logs."
+            detail="Model is not loaded. Please contact administrator. Check GDRIVE_MODEL_ID environment variable."
         )
     
     try:
@@ -249,8 +285,8 @@ async def predict(
         file_path = os.path.join(HEATMAP_DIR, filename)
         cv2.imwrite(file_path, overlay)
 
-        # Use environment variable or request info for URL
-        host = os.getenv("API_HOST", "http://127.0.0.1:8000")
+        # Get host from environment or use Render URL
+        host = os.getenv("API_HOST", "https://cardiovision-ba4w.onrender.com")
         heatmap_url = f"{host}/heatmaps/{filename}"
 
         # Save with IST time
@@ -303,7 +339,7 @@ def download_report(user_id: str = Depends(get_current_user)):
         c = canvas.Canvas(report_path, pagesize=A4)
         width, height = A4
 
-        #  Get current time in IST
+        # Get current time in IST
         current_time = get_ist_time()
         
         # Header
@@ -324,11 +360,9 @@ def download_report(user_id: str = Depends(get_current_user)):
         # Display analysis date in IST
         analysis_time = record['created_at']
         if isinstance(analysis_time, datetime):
-            # If already timezone-aware, convert to IST
             if analysis_time.tzinfo is not None:
                 analysis_time = analysis_time.astimezone(IST)
             else:
-                # If naive datetime (UTC), localize then convert
                 analysis_time = pytz.utc.localize(analysis_time).astimezone(IST)
             
             formatted_time = analysis_time.strftime('%d %B %Y, %I:%M:%S %p IST')
@@ -380,10 +414,11 @@ def root():
         "server_time": current_time.strftime('%d %B %Y, %I:%M:%S %p IST'),  
         "timezone": "Asia/Kolkata (IST)",
         "model_loaded": model is not None,
+        "model_status": "ready" if model is not None else "not loaded - check GDRIVE_MODEL_ID",
         "endpoints": {
             "signup": "/signup",
             "login": "/login",
-            "predict": "/predict",
+            "predict": "/predict (requires model)",
             "download_report": "/download-report"
         }
     }

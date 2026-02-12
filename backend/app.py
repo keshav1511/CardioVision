@@ -83,18 +83,15 @@ async def predict(
     user_id: str = Depends(get_current_user)
 ):
     try:
-        # Read uploaded image
         img_bytes = await file.read()
 
-        # Convert to base64
-        encoded = base64.b64encode(img_bytes).decode("utf-8")
+        files = {
+            "image": (file.filename, img_bytes, file.content_type)
+        }
 
-        # Call Hugging Face Gradio API
         response = requests.post(
-            f"{HF_SPACE_URL}/run/predict",
-            json={
-                "data": [f"data:image/png;base64,{encoded}"]
-            },
+            f"{HF_SPACE_URL}/api/predict/",
+            files=files,
             timeout=60
         )
 
@@ -104,26 +101,12 @@ async def predict(
                 detail=f"HF Error: {response.text}"
             )
 
-        result = response.json()["data"][0]
-
-        risk = result["risk"]
-        confidence = result["confidence"]
+        # 👇 TEMPORARY DEBUG
+        return response.json()
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Save to MongoDB
-    records_collection.insert_one({
-        "user_id": user_id,
-        "risk": risk,
-        "confidence": confidence,
-        "created_at": get_ist_time()
-    })
-
-    return {
-        "risk": risk,
-        "confidence": confidence
-    }
 
 
 # ---------------------------

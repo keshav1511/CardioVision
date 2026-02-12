@@ -19,6 +19,8 @@ from reportlab.pdfgen import canvas
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import requests
+
 
 # ---------------------------
 # Load environment variables
@@ -53,33 +55,41 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 app.mount("/heatmaps", StaticFiles(directory=HEATMAP_DIR), name="heatmaps")
 
 # ---------------------------
-# Model Loading (LOCAL FILE)
+# Model Download + Loading
 # ---------------------------
+
 MODEL_PATH = os.path.join(BASE_DIR, "cardiovision_b7.pth")
+MODEL_URL = "https://github.com/keshav1511/CardioVision/releases/download/v1.0/cardiovision_b7.pth"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🖥️ Using device: {device}")
 
-model = None
+def download_model():
+    if not os.path.exists(MODEL_PATH):
+        print("📥 Downloading model from GitHub Release...")
+        response = requests.get(MODEL_URL, stream=True)
+        if response.status_code == 200:
+            with open(MODEL_PATH, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print("✅ Model downloaded successfully")
+        else:
+            raise RuntimeError("❌ Failed to download model")
 
-if os.path.exists(MODEL_PATH):
-    try:
-        print("🔄 Loading EfficientNet-B7 model...")
-        model = EfficientNet.from_name("efficientnet-b7")
-        model._fc = torch.nn.Linear(model._fc.in_features, 1)
+download_model()
 
-        state_dict = torch.load(MODEL_PATH, map_location=device)
-        model.load_state_dict(state_dict)
+model = EfficientNet.from_name("efficientnet-b7")
+model._fc = torch.nn.Linear(model._fc.in_features, 1)
 
-        model.to(device)
-        model.eval()
+state_dict = torch.load(MODEL_PATH, map_location=device)
+model.load_state_dict(state_dict)
 
-        print("✅ Model loaded successfully!")
-    except Exception as e:
-        print(f"❌ Model loading failed: {e}")
-        model = None
-else:
-    print("❌ Model file not found inside container.")
+model.to(device)
+model.eval()
+
+print("✅ EfficientNet-B7 loaded successfully!")
+
 
 # ---------------------------
 # Image Transform

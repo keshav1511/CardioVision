@@ -31,7 +31,7 @@ app = FastAPI(title="CardioVision API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Change to your Vercel URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,26 +76,29 @@ def login(user: UserLogin):
 # ---------------------------
 # Prediction Route
 # ---------------------------
+
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
     try:
-        print("Received file:", file.filename)
-
+        # Read uploaded image
         img_bytes = await file.read()
+
+        print("Received file:", file.filename)
         print("File size:", len(img_bytes))
-
-        files = {
-            "image": (file.filename, img_bytes, file.content_type)
-        }
-
         print("Sending request to HF:", HF_SPACE_URL)
 
+        # Convert image to base64 (required for Gradio)
+        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+
+        # Send to Hugging Face Space
         response = requests.post(
-            f"{HF_SPACE_URL}/run/predict",
-            files=files,
+            f"{HF_SPACE_URL}/api/predict",
+            json={
+                "data": [f"data:image/png;base64,{img_base64}"]
+            },
             timeout=60
         )
 
@@ -110,27 +113,29 @@ async def predict(
 
         data = response.json()
 
+        # Gradio returns output inside data list
         result = data["data"][0]
+
         risk = result["risk"]
         confidence = result["confidence"]
-
-        print("Prediction successful:", risk, confidence)
-
-        records_collection.insert_one({
-            "user_id": user_id,
-            "risk": risk,
-            "confidence": confidence,
-            "created_at": get_ist_time()
-        })
-
-        return {
-            "risk": risk,
-            "confidence": confidence
-        }
 
     except Exception as e:
         print("ERROR OCCURRED:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+    # Save prediction record
+    records_collection.insert_one({
+        "user_id": user_id,
+        "risk": risk,
+        "confidence": confidence,
+        "created_at": get_ist_time()
+    })
+
+    return {
+        "risk": risk,
+        "confidence": confidence
+    }
+
 
 # ---------------------------
 # Health Check

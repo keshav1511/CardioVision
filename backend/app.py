@@ -7,6 +7,7 @@ from datetime import datetime
 import pytz
 import os
 import requests
+import base64
 
 # ---------------------------
 # Config
@@ -82,28 +83,31 @@ async def predict(
     user_id: str = Depends(get_current_user)
 ):
     try:
+        # Read uploaded image
         img_bytes = await file.read()
 
-        files = {
-            "image": (file.filename, img_bytes, file.content_type)
-        }
+        # Convert to base64
+        encoded = base64.b64encode(img_bytes).decode("utf-8")
 
+        # Call Hugging Face Gradio API
         response = requests.post(
-            f"{HF_SPACE_URL}/api/predict/",
-            files=files,
+            f"{HF_SPACE_URL}/run/predict",
+            json={
+                "data": [f"data:image/png;base64,{encoded}"]
+            },
             timeout=60
         )
 
         if response.status_code != 200:
             raise HTTPException(
                 status_code=500,
-                detail="Model inference failed"
+                detail=f"HF Error: {response.text}"
             )
 
-        data = response.json()
+        result = response.json()["data"][0]
 
-        risk = data["risk"]
-        confidence = data["confidence"]
+        risk = result["risk"]
+        confidence = result["confidence"]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -120,7 +124,6 @@ async def predict(
         "risk": risk,
         "confidence": confidence
     }
-
 
 
 # ---------------------------

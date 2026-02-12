@@ -1,12 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException
-import torch
-from efficientnet_pytorch import EfficientNet
-from torchvision import transforms
-from PIL import Image
-import io
-import numpy as np
-import cv2
-import os
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from models import UserCreate, UserLogin
 from database import users_collection, records_collection
@@ -14,18 +8,15 @@ from auth import get_current_user, hash_password, verify_password, create_access
 from datetime import datetime
 import pytz
 import uuid
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
+import os
+import base64
 import requests
 
+# ---------------------------
+# Config
+# ---------------------------
 
-# ---------------------------
-# Load environment variables
-# ---------------------------
-load_dotenv()
+HF_API_URL = "https://keshavnayak15-cardiovision-b7.hf.space/run/predict"
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -35,6 +26,7 @@ def get_ist_time():
 # ---------------------------
 # App Setup
 # ---------------------------
+
 app = FastAPI(title="CardioVision API")
 
 app.add_middleware(
@@ -45,122 +37,85 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HEATMAP_DIR = os.path.join(BASE_DIR, "heatmaps")
-REPORTS_DIR = os.path.join(BASE_DIR, "reports")
-
-os.makedirs(HEATMAP_DIR, exist_ok=True)
-os.makedirs(REPORTS_DIR, exist_ok=True)
-
-app.mount("/heatmaps", StaticFiles(directory=HEATMAP_DIR), name="heatmaps")
-
 # ---------------------------
-# Model Download + Loading
+# Auth Routes
 # ---------------------------
 
-MODEL_PATH = os.path.join(BASE_DIR, "cardiovision_b7.pth")
-MODEL_URL = "https://github.com/keshav1511/CardioVision/releases/download/v1.0/cardiovision_b7.pth"
+@app.post("/signup")
+def signup(user: UserCreate):
+    if users_collection.find_one({"email": user.email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"🖥️ Using device: {device}")
+    users_collection.insert_one({
+        "username": user.username,
+        "email": user.email,
+        "password": hash_password(user.password),
+        "created_at": get_ist_time()
+    })
 
-def download_model():
-    if not os.path.exists(MODEL_PATH):
-        print("📥 Downloading model from GitHub Release...")
-        response = requests.get(MODEL_URL, stream=True)
-        if response.status_code == 200:
-            with open(MODEL_PATH, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            print("✅ Model downloaded successfully")
-        else:
-            raise RuntimeError("❌ Failed to download model")
-
-download_model()
-
-model = EfficientNet.from_name("efficientnet-b7")
-model._fc = torch.nn.Linear(model._fc.in_features, 1)
-
-state_dict = torch.load(MODEL_PATH, map_location=device)
-model.load_state_dict(state_dict)
-
-model.to(device)
-model.eval()
-
-print("✅ EfficientNet-B7 loaded successfully!")
+    return {"message": "Account created successfully"}
 
 
-# ---------------------------
-# Image Transform
-# ---------------------------
-transform = transforms.Compose([
-    transforms.Resize((300, 300)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
+@app.post("/login")
+def login(user: UserLogin):
+    db_user = users_collection.find_one({"email": user.email})
+
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    if not verify_password(user.password, db_user["password"]):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+
+    access_token = create_access_token(
+        data={"sub": str(db_user["_id"]), "email": db_user["email"]}
     )
-])
 
-def risk_level(p):
-    if p < 0.25:
-        return "Low Risk"
-    elif p < 0.60:
-        return "Moderate Risk"
-    return "High Risk"
+    return {"access_token": access_token, "token_type": "bearer"}
+
 
 # ---------------------------
-# Prediction Endpoint
+# Prediction Route
 # ---------------------------
+
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
     img_bytes = await file.read()
 
-    image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    tensor = transform(image).unsqueeze(0).to(device)
+    encoded = base64.b64encode(img_bytes).decode("utf-8")
 
-    with torch.no_grad():
-        output = model(tensor)
-        prob = torch.sigmoid(output).item()
+    response = requests.post(
+        HF_API_URL,
+        json={"data": [f"data:image/png;base64,{encoded}"]}
+    )
 
-    risk = risk_level(prob)
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Model inference failed")
 
-    filename = f"{uuid.uuid4()}.png"
-    file_path = os.path.join(HEATMAP_DIR, filename)
+    result = response.json()["data"][0]
 
-    cv2.imwrite(file_path, cv2.resize(np.array(image), (300, 300)))
-
-    host = os.getenv("API_HOST", "")
-    heatmap_url = f"{host}/heatmaps/{filename}" if host else f"/heatmaps/{filename}"
+    risk = result["risk"]
+    confidence = result["confidence"]
 
     records_collection.insert_one({
         "user_id": user_id,
         "risk": risk,
-        "confidence": round(prob * 100, 2),
-        "heatmap_path": heatmap_url,
+        "confidence": confidence,
         "created_at": get_ist_time()
     })
 
     return {
         "risk": risk,
-        "confidence": round(prob * 100, 2),
-        "heatmap_url": heatmap_url
+        "confidence": confidence
     }
 
+
 # ---------------------------
-# Health
+# Health Check
 # ---------------------------
+
 @app.get("/")
 def root():
-    return {
-        "status": "CardioVision API running",
-        "model_loaded": model is not None,
-        "device": str(device)
-    }
+    return {"status": "CardioVision backend running"}

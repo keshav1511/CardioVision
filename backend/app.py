@@ -76,24 +76,31 @@ def login(user: UserLogin):
 # ---------------------------
 # Prediction Route
 # ---------------------------
-
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
     try:
+        print("Received file:", file.filename)
+
         img_bytes = await file.read()
+        print("File size:", len(img_bytes))
 
         files = {
             "image": (file.filename, img_bytes, file.content_type)
         }
 
+        print("Sending request to HF:", HF_SPACE_URL)
+
         response = requests.post(
-            f"{HF_SPACE_URL}/api/predict/",
+            f"{HF_SPACE_URL}/run/predict",
             files=files,
             timeout=60
         )
+
+        print("HF STATUS:", response.status_code)
+        print("HF RESPONSE:", response.text)
 
         if response.status_code != 200:
             raise HTTPException(
@@ -101,13 +108,29 @@ async def predict(
                 detail=f"HF Error: {response.text}"
             )
 
-        # 👇 TEMPORARY DEBUG
-        return response.json()
+        data = response.json()
+
+        result = data["data"][0]
+        risk = result["risk"]
+        confidence = result["confidence"]
+
+        print("Prediction successful:", risk, confidence)
+
+        records_collection.insert_one({
+            "user_id": user_id,
+            "risk": risk,
+            "confidence": confidence,
+            "created_at": get_ist_time()
+        })
+
+        return {
+            "risk": risk,
+            "confidence": confidence
+        }
 
     except Exception as e:
+        print("ERROR OCCURRED:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 # ---------------------------
 # Health Check

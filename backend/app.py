@@ -1,22 +1,21 @@
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from models import UserCreate, UserLogin
 from database import users_collection, records_collection
 from auth import get_current_user, hash_password, verify_password, create_access_token
 from datetime import datetime
 import pytz
-import uuid
 import os
-import base64
 import requests
 
 # ---------------------------
 # Config
 # ---------------------------
 
-HF_API_URL = "https://keshavnayak15-cardiovision-b7.hf.space/run/predict"
+HF_SPACE_URL = os.getenv(
+    "HF_SPACE_URL",
+    "https://keshavnayak15-cardiovision-b7.hf.space"
+)
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -82,23 +81,34 @@ async def predict(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
-    img_bytes = await file.read()
+    try:
+        img_bytes = await file.read()
 
-    encoded = base64.b64encode(img_bytes).decode("utf-8")
+        files = {
+            "image": (file.filename, img_bytes, file.content_type)
+        }
 
-    response = requests.post(
-        HF_API_URL,
-        json={"data": [f"data:image/png;base64,{encoded}"]}
-    )
+        response = requests.post(
+            f"{HF_SPACE_URL}/api/predict/",
+            files=files,
+            timeout=60
+        )
 
-    if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Model inference failed")
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=500,
+                detail="Model inference failed"
+            )
 
-    result = response.json()["data"][0]
+        data = response.json()
 
-    risk = result["risk"]
-    confidence = result["confidence"]
+        risk = data["risk"]
+        confidence = data["confidence"]
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Save to MongoDB
     records_collection.insert_one({
         "user_id": user_id,
         "risk": risk,
@@ -110,6 +120,7 @@ async def predict(
         "risk": risk,
         "confidence": confidence
     }
+
 
 
 # ---------------------------

@@ -15,7 +15,7 @@ import base64
 
 HF_SPACE_URL = os.getenv(
     "HF_SPACE_URL",
-    "https://keshavnayak15-cardiovision-b7.hf.space"
+    "https://huggingface.co/spaces/keshavnayak15/cardiovision-b7"
 )
 
 IST = pytz.timezone("Asia/Kolkata")

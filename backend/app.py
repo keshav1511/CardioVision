@@ -8,6 +8,7 @@ import pytz
 import os
 import requests
 import base64
+from gradio_client import Client
 
 # ---------------------------
 # Config
@@ -15,13 +16,20 @@ import base64
 
 HF_SPACE_URL = os.getenv(
     "HF_SPACE_URL",
-    "https://keshavnayak15-cardiovision-b7.hf.space"
+    "keshavnayak15-cardiovision-b7.hf.space"
 )
 
 IST = pytz.timezone("Asia/Kolkata")
 
 def get_ist_time():
     return datetime.now(IST)
+
+try:
+    gradio_client = Client(HF_SPACE_URL)
+    print(f"✅ Connected to Gradio Space: {HF_SPACE_URL}")
+except Exception as e:
+    print(f"⚠️ Warning: Could not connect to Gradio Space: {e}")
+    gradio_client = None
 
 # ---------------------------
 # App Setup
@@ -82,42 +90,42 @@ async def predict(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
+    if not gradio_client:
+        raise HTTPException(
+            status_code=503,
+            detail="Prediction service unavailable"
+        )
+    
     try:
         # Read uploaded image
         img_bytes = await file.read()
 
         print("Received file:", file.filename)
         print("File size:", len(img_bytes))
-        print("Sending request to HF:", HF_SPACE_URL)
 
-        # Convert image to base64 (required for Gradio)
-        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        # ✅ Save temporarily
+        temp_path = f"/tmp/{file.filename}"
+        with open(temp_path, "wb") as f:
+            f.write(img_bytes)
 
-        # Send to Hugging Face Space
-        response = requests.post(
-            f"{HF_SPACE_URL}/api/predict",
-            json={
-                "data": [f"data:image/png;base64,{img_base64}"]
-            },
-            timeout=60
+        # ✅ Call Gradio Space
+        result = gradio_client.predict(
+            image=temp_path,
+            api_name="/predict"  # Check your Gradio interface for correct name
         )
 
-        print("HF STATUS:", response.status_code)
-        print("HF RESPONSE:", response.text)
+        print("HF RESPONSE:", result)
 
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=500,
-                detail=f"HF Error: {response.text}"
-            )
+        # Parse result based on your Gradio output format
+        if isinstance(result, dict):
+            risk = result.get("risk", "Unknown")
+            confidence = result.get("confidence", 0)
+        else:
+            risk = str(result)
+            confidence = 0
 
-        data = response.json()
-
-        # Gradio returns output inside data list
-        result = data["data"][0]
-
-        risk = result["risk"]
-        confidence = result["confidence"]
+        # Clean up temp file
+        os.remove(temp_path)
 
     except Exception as e:
         print("ERROR OCCURRED:", str(e))
@@ -135,7 +143,6 @@ async def predict(
         "risk": risk,
         "confidence": confidence
     }
-
 
 # ---------------------------
 # Health Check

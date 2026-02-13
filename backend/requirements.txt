@@ -10,3 +10,4 @@ python-jose==3.3.0
 email-validator
 pytz==2023.3
 requests==2.31.0
+gradio-client==0.7.0  # ✅ Add this

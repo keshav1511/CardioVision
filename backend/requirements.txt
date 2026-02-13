@@ -10,4 +10,6 @@ python-jose==3.3.0
 email-validator
 pytz==2023.3
 requests==2.31.0
-gradio-client==0.7.0  # ✅ Add this
+gradio_client==2.0.3
+Pillow==10.1.0
+numpy==1.26.2

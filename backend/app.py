@@ -6,9 +6,10 @@ from auth import get_current_user, hash_password, verify_password, create_access
 from datetime import datetime
 import pytz
 import os
-import requests
-import base64
 from gradio_client import Client
+from PIL import Image
+import numpy as np
+import io
 
 # ---------------------------
 # Config
@@ -16,7 +17,7 @@ from gradio_client import Client
 
 HF_SPACE_URL = os.getenv(
     "HF_SPACE_URL",
-    "keshavnayak15-cardiovision-b7.hf.space"
+    "keshavnayak15/cardiovision-b7"
 )
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -24,12 +25,17 @@ IST = pytz.timezone("Asia/Kolkata")
 def get_ist_time():
     return datetime.now(IST)
 
-try:
-    gradio_client = Client(HF_SPACE_URL)
-    print(f"✅ Connected to Gradio Space: {HF_SPACE_URL}")
-except Exception as e:
-    print(f"⚠️ Warning: Could not connect to Gradio Space: {e}")
-    gradio_client = None
+# Initialize Gradio client
+def init_gradio_client():
+    try:
+        client = Client(HF_SPACE_URL)
+        print(f"✅ Connected to Gradio Space: {HF_SPACE_URL}")
+        return client
+    except Exception as e:
+        print(f"⚠️ Warning: Could not connect to Gradio Space: {e}")
+        return None
+
+gradio_client = init_gradio_client()
 
 # ---------------------------
 # App Setup
@@ -39,7 +45,7 @@ app = FastAPI(title="CardioVision API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to your Vercel URL in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,7 +88,7 @@ def login(user: UserLogin):
 
 
 # ---------------------------
-# Prediction Route
+# Prediction Route - FIXED
 # ---------------------------
 
 @app.post("/predict")
@@ -90,46 +96,64 @@ async def predict(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
+    global gradio_client
+    
+    # Try to reconnect if client is None
+    if not gradio_client:
+        print("🔄 Attempting to reconnect to Gradio Space...")
+        gradio_client = init_gradio_client()
+    
     if not gradio_client:
         raise HTTPException(
             status_code=503,
-            detail="Prediction service unavailable"
+            detail="Prediction service temporarily unavailable. Please try again."
         )
     
     try:
         # Read uploaded image
         img_bytes = await file.read()
 
-        print("Received file:", file.filename)
-        print("File size:", len(img_bytes))
+        print(f"📤 Received file: {file.filename}")
+        print(f"📊 File size: {len(img_bytes)} bytes")
 
-        # ✅ Save temporarily
-        temp_path = f"/tmp/{file.filename}"
-        with open(temp_path, "wb") as f:
-            f.write(img_bytes)
+        # Convert to PIL Image then to numpy array
+        # This matches the gr.Image(type="numpy") input
+        image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        image_array = np.array(image)
 
-        # ✅ Call Gradio Space
+        print(f"🖼️ Image shape: {image_array.shape}")
+        print(f"🚀 Sending to HF Space: {HF_SPACE_URL}")
+
+        # Call Gradio Space with numpy array
         result = gradio_client.predict(
-            image=temp_path,
-            api_name="/predict"  # Check your Gradio interface for correct name
+            image_array,  # Send numpy array directly
+            api_name="/predict"
         )
 
-        print("HF RESPONSE:", result)
+        print(f"✅ HF Response: {result}")
+        print(f"📥 Response type: {type(result)}")
 
-        # Parse result based on your Gradio output format
+        # Parse result - your Gradio returns {"risk": str, "confidence": float}
         if isinstance(result, dict):
             risk = result.get("risk", "Unknown")
-            confidence = result.get("confidence", 0)
+            confidence = float(result.get("confidence", 0))
         else:
+            # Fallback parsing
             risk = str(result)
-            confidence = 0
+            confidence = 0.0
 
-        # Clean up temp file
-        os.remove(temp_path)
+        print(f"✅ Parsed - Risk: {risk}, Confidence: {confidence}")
 
     except Exception as e:
-        print("ERROR OCCURRED:", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ PREDICTION ERROR: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        gradio_client = None
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction failed: {str(e)}"
+        )
 
     # Save prediction record
     records_collection.insert_one({
@@ -144,10 +168,14 @@ async def predict(
         "confidence": confidence
     }
 
+
 # ---------------------------
 # Health Check
 # ---------------------------
 
 @app.get("/")
 def root():
-    return {"status": "CardioVision backend running"}
+    return {
+        "status": "CardioVision backend running",
+        "gradio_connected": gradio_client is not None
+    }
